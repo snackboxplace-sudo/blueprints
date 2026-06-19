@@ -1,47 +1,66 @@
 blueprint:
-  name: Notify on Zone Entrance or Exit
-  description: Send a notification to a specific person when another person enters or exits a specified zone.
+  name: Notify on Zone Entrance or Exit (Fixed)
+  description: Send a notification to a specific device when a person enters or leaves a specified zone.
   domain: automation
   input:
-    tracked_person:
+    person_entity:
       name: Tracked Person
-      description: The person whose movement will trigger this automation.
       selector:
         entity:
           filter:
-            - domain: person
-    target_zone:
+            domain: person
+    zone_entity:
       name: Target Zone
-      description: The zone to monitor for entry or exit.
       selector:
         entity:
           filter:
-            - domain: zone
+            domain: zone
     notify_device:
-      name: Notification Device
-      description: The device (phone/tablet) that will receive the notification.
+      name: Device to notify
+      description: Device needs to run the official Home Assistant app to receive notifications.
       selector:
         device:
           filter:
-            - integration: mobile_app
+            integration: mobile_app
 
 mode: restart
 
-trigger:
-  - trigger: zone
-    entity_id: !input tracked_person
-    zone: !input target_zone
-    event: enter
-    id: entered
-  - trigger: zone
-    entity_id: !input tracked_person
-    zone: !input target_zone
-    event: leave
-    id: left
+triggers:
+  - trigger: state
+    entity_id: !input person_entity
 
-action:
-  - action: notify.mobile_app_{{ device_attr(notify_device, 'name') | slugify }}
-    data:
-      title: "Zone Alert"
-      message: >-
-        {{ state_attr(trigger.entity_id, 'friendly_name') }} has {{ trigger.id }} {{ state_attr(trigger.zone, 'friendly_name') }}.
+variables:
+  zone_entity: !input zone_entity
+  zone_state: "{{ states[zone_entity].name }}"
+  person_entity: !input person_entity
+  person_name: "{{ states[person_entity].name }}"
+
+conditions:
+  - condition: template
+    value_template: >-
+      {% set home_enter = (zone_entity == 'zone.home' and trigger.from_state.state != 'home' and trigger.to_state.state == 'home') %}
+      {% set home_leave = (zone_entity == 'zone.home' and trigger.from_state.state == 'home' and trigger.to_state.state != 'home') %}
+      {% set other_enter = (zone_entity != 'zone.home' and trigger.from_state.state != zone_state and trigger.to_state.state == zone_state) %}
+      {% set other_leave = (zone_entity != 'zone.home' and trigger.from_state.state == zone_state and trigger.to_state.state != zone_state) %}
+      {{ home_enter or home_leave or other_enter or other_leave }}
+
+actions:
+  - alias: "Notify that a person has moved"
+    domain: mobile_app
+    type: notify
+    device_id: !input notify_device
+    message: >-
+      {% set current_state = trigger.to_state.state %}
+      {% if zone_entity == 'zone.home' %}
+        {% if current_state == 'home' %}
+          {{ person_name }} has arrived Home
+        {% else %}
+          {{ person_name }} has left Home
+        {% endif %}
+      {% else %}
+        {% if current_state == zone_state %}
+          {{ person_name }} has arrived at {{ zone_state }}
+        {% else %}
+          {{ person_name }} has left {{ zone_state }}
+        {% endif %}
+      {% endif %}
