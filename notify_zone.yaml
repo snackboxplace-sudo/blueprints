@@ -1,0 +1,47 @@
+blueprint:
+  name: Notify on Zone Entrance or Exit
+  description: Send a notification to a specific person when another person enters or exits a specified zone.
+  domain: automation
+  input:
+    tracked_person:
+      name: Tracked Person
+      description: The person whose movement will trigger this automation.
+      selector:
+        entity:
+          filter:
+            - domain: person
+    target_zone:
+      name: Target Zone
+      description: The zone to monitor for entry or exit.
+      selector:
+        entity:
+          filter:
+            - domain: zone
+    notify_device:
+      name: Notification Device
+      description: The device (phone/tablet) that will receive the notification.
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+
+mode: restart
+
+trigger:
+  - trigger: zone
+    entity_id: !input tracked_person
+    zone: !input target_zone
+    event: enter
+    id: entered
+  - trigger: zone
+    entity_id: !input tracked_person
+    zone: !input target_zone
+    event: leave
+    id: left
+
+action:
+  - action: notify.mobile_app_{{ device_attr(notify_device, 'name') | slugify }}
+    data:
+      title: "Zone Alert"
+      message: >-
+        {{ state_attr(trigger.entity_id, 'friendly_name') }} has {{ trigger.id }} {{ state_attr(trigger.zone, 'friendly_name') }}.
